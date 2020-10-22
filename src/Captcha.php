@@ -294,7 +294,7 @@ class Captcha
         }
 
         if ($api) {
-            Cache::put('captcha_record_' . $generator['key'], $generator['value'], $this->expire);
+            Cache::store('redis')->put('captcha_record_' . $generator['key'], $generator['value'], $this->expire);
         }
 
         return $api ? [
@@ -494,7 +494,7 @@ class Captcha
      */
     public function check_api($value, $key, $config = 'default'): bool
     {
-        if (!Cache::pull('captcha_record_' . $key)) {
+        if (!Cache::store('redis')->pull('captcha_record_' . $key)) {
             return false;
         }
 
