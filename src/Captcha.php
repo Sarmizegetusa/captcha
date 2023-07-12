@@ -188,7 +188,12 @@ class Captcha
      * @var bool
      */
     protected $encrypt = true;
-    
+
+    /**
+     * @var int
+     */
+    protected $marginTop = 0;
+
     /**
      * Constructor
      *
@@ -216,7 +221,7 @@ class Captcha
         $this->hasher = $hasher;
         $this->str = $str;
         $this->characters = config('captcha.characters', ['1', '2', '3', '4', '6', '7', '8', '9']);
-        $this->fontsDirectory = config('captcha.fontsDirectory', __DIR__ . '/../assets/fonts');
+        $this->fontsDirectory = config('captcha.fontsDirectory',  dirname(__DIR__) . '/assets/fonts');
     }
 
     /**
@@ -293,9 +298,7 @@ class Captcha
             $this->image->blur($this->blur);
         }
 
-        if ($api) {
-            Cache::store('redis')->put('captcha_record_' . $generator['key'], $generator['value'], $this->expire);
-        }
+        Cache::store('redis')->put($this->get_cache_key($generator['key']), $generator['value'], $this->expire);
 
         return $api ? [
             'sensitive' => $generator['sensitive'],
@@ -342,7 +345,7 @@ class Captcha
 
         $hash = $this->hasher->make($key);
         if($this->encrypt) $hash = Crypt::encrypt($hash);
-        
+
         $this->session->put('captcha', [
             'sensitive' => $this->sensitive,
             'key' => $hash,
@@ -364,6 +367,9 @@ class Captcha
     protected function text(): void
     {
         $marginTop = $this->image->height() / $this->length;
+        if ($this->marginTop !== 0) {
+            $marginTop = $this->marginTop;
+        }
 
         $text = $this->text;
         if (is_string($text)) {
@@ -470,6 +476,11 @@ class Captcha
         $sensitive = $this->session->get('captcha.sensitive');
         $encrypt = $this->session->get('captcha.encrypt');
 
+        if (!Cache::store('redis')->pull($this->get_cache_key($key))) {
+            $this->session->remove('captcha');
+            return false;
+        }
+
         if (!$sensitive) {
             $value = $this->str->lower($value);
         }
@@ -485,6 +496,16 @@ class Captcha
     }
 
     /**
+     * Returns the md5 short version of the key for cache
+     *
+     * @param string $key
+     * @return string
+     */
+    protected function get_cache_key($key) {
+        return 'captcha_' . md5($key);
+    }
+
+    /**
      * Captcha check
      *
      * @param string $value
@@ -494,12 +515,13 @@ class Captcha
      */
     public function check_api($value, $key, $config = 'default'): bool
     {
-        if (!Cache::store('redis')->pull('captcha_record_' . $key)) {
+        if (!Cache::store('redis')->pull($this->get_cache_key($key))) {
             return false;
         }
 
         $this->configure($config);
 
+        if(!$this->sensitive) $value = $this->str->lower($value);
         if($this->encrypt) $key = Crypt::decrypt($key);
         return $this->hasher->check($value, $key);
     }
